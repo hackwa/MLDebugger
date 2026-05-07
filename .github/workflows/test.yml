@@ -50,5 +50,5 @@ jobs:
     - name: Run debugger with test backend
       run: |
         cd ext
-        git clone https://gitenterprise.xilinx.com/XDP/MLDebugTest
+        git clone https://gitenterprise.xilinx.com/XDP/MLDebugTest tests
         python run_tests.py
