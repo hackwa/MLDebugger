@@ -14,3 +14,4 @@ src/cpp/build
 AIEDebugLibrary.dll
 *.lst
 *.Identifier
+ext/tests

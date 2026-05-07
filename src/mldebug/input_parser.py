@@ -36,7 +36,7 @@ class RunFlags:
   mock_hang: bool
   dump_temps: bool
   multistamp: bool
-  enable_tg: bool
+  disable_tg: bool
 
 
 @dataclass
@@ -121,7 +121,7 @@ def create_run_flags(args, subgraph_path: str, fsp: str, fsp_execution_order: li
     get_flag("mock_hang"),
     get_flag("dump_temps"),
     get_flag("multistamp"),
-    get_flag("enable_tg", default=True)
+    get_flag("disable_tg")
   )
 
 

@@ -243,12 +243,16 @@ class AIEUtil:
 
   def read_control_instr(self):
     """
-    Read and return the value of the control instruction from the memory tile spare register.
+    Read and return the value of the SPARE_REG control instruction from all memory tiles.
 
     Returns:
-      int: Value from the SPARE_REG of memory tile (col=0, row=1).
+      dict[str, int]: Mapping of "MEM_TILE_{col}" to the SPARE_REG value for each memory tile.
     """
-    return self.impl.read_register(0, 1, self.aie_iface.Memory_tile_registers["SPARE_REG"])
+    spare_reg = self.aie_iface.Memory_tile_registers["SPARE_REG"]
+    return {
+      f"MEM_TILE_{c}": self.impl.read_register(c, r, spare_reg)
+      for c, r in self._filter_tiles(self.aie_iface.MEM_TILE_T)
+    }
 
   def initialize_stamp(self):
     """

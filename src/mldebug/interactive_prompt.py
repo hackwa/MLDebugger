@@ -111,7 +111,7 @@ LAYER BASED AIE CONTROL FUNCTIONS (-b or -v or -x2 flags required)
     rreg = h.impl.read_register
     preg = h.impl.print_register
     wreg = h.impl.write_register
-    control_instr = h.aie_utls[0].read_control_instr
+    control_instr = h.read_control_instr
     add_brkpt = h.add_breakpoint
     status = h.status_handle.get
     uc_status = h.status_handle.get_uc_status
