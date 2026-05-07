@@ -1,0 +1,113 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: MLDebugger Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Differentiate manual testing from automated testing
+env:
+  GIT_MODE: 1
+
+jobs:
+  build:
+    runs-on: [ build ]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        clean: true
+
+    - name: Install uv
+      run: |
+        pip install uv
+        echo "Checking pip show:"
+        pip show uv
+        echo "Checking user base:"
+        python -m site --user-base
+        echo "Checking user bin directory:"
+        ls -la $(python -m site --user-base)/bin/ 2>/dev/null || echo "No user bin directory"
+        echo "Current PATH:"
+        echo $PATH
+        echo "Looking for uv executable:"
+        find /scratch -name "uv" 2>/dev/null || echo "uv not found in /scratch"
+        find $HOME -name "uv" 2>/dev/null || echo "uv not found in HOME"
+
+    - name: Add uv to PATH
+      run: echo "$(python -m site --user-base)/bin" >> $GITHUB_PATH
+
+    - name: "Set up Python"
+      uses: actions/setup-python@v4
+      with:
+        python-version-file: "pyproject.toml"
+
+    - name: Create and activate virtual environment
+      run: |
+        uv venv
+        source .venv/bin/activate
+
+    - name: Install dependencies
+      run: |
+        uv pip install flake8 pytest pylint
+        if [ -f requirements.txt ]; then uv pip install -r requirements.txt; fi
+
+    - name: Lint with flake8, pylint
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --exclude=.venv --count --select=E9,F63,F7,F82 --show-source --statistics --indent-size 2
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        # flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --indent-size 2
+        find src/ -type f -name "*.py"  | xargs pylint --ignore=.venv --indent-string='  ' --exit-zero --max-line-length=120
+
+    - name: Update submodules
+      run: |
+        git submodule update --init --recursive
+
+    - name: Build wheel with UV
+      run: |
+        uv build --wheel .
+
+    - name: Store wheel path
+      id: wheel-path
+      run: |
+        WHEEL_PATH=$(find dist -name "*.whl" | head -1)
+        echo "wheel_path=$WHEEL_PATH" >> $GITHUB_OUTPUT
+        echo "wheel_name=$(basename $WHEEL_PATH)" >> $GITHUB_OUTPUT
+
+    - name: Install built wheel
+      run: |
+        # Find the wheel file and install it
+        WHEEL_PATH=$(find dist -name "*.whl" | head -1)
+        uv pip install --system "$WHEEL_PATH"
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}
+        release_name: Release v${{ github.run_number }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Assets to Release
+      run: |
+        # Upload only the Wheel (DLL is already inside it)
+        gh release upload v${{ github.run_number }} \
+          "${{ steps.wheel-path.outputs.wheel_path }}" \
+          --clobber
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Delete old releases
+      shell: bash
+      run: |
+        # Get all releases, skip the first 10 (keep_latest), delete the rest
+        gh release list --limit 100 --json tagName --jq '.[10:][].tagName' | \
+        xargs -I {} gh release delete {} --yes
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
