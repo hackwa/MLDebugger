@@ -24,21 +24,6 @@ jobs:
       with:
         clean: true
 
-    - name: Install uv
-      run: |
-        pip install uv
-        echo "Checking pip show:"
-        pip show uv
-        echo "Checking user base:"
-        python -m site --user-base
-        echo "Checking user bin directory:"
-        ls -la $(python -m site --user-base)/bin/ 2>/dev/null || echo "No user bin directory"
-        echo "Current PATH:"
-        echo $PATH
-        echo "Looking for uv executable:"
-        find /scratch -name "uv" 2>/dev/null || echo "uv not found in /scratch"
-        find $HOME -name "uv" 2>/dev/null || echo "uv not found in HOME"
-
     - name: Add uv to PATH
       run: echo "$(python -m site --user-base)/bin" >> $GITHUB_PATH
 
@@ -51,11 +36,6 @@ jobs:
       run: |
         uv venv
         source .venv/bin/activate
-
-    - name: Install dependencies
-      run: |
-        uv pip install flake8 pytest pylint
-        if [ -f requirements.txt ]; then uv pip install -r requirements.txt; fi
 
     - name: Lint with flake8, pylint
       run: |
