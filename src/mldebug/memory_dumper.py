@@ -73,6 +73,12 @@ class MemoryDumper:
       self._dir_cache.add(p)
     return p
 
+  def get_base_output_dir(self):
+    """
+    Get the base outputput directory. Used by run summary
+    """
+    return self.output_dir
+
   def write_data_to_file(self, data, fname):
     """
     Write an array of data to file in text or binary format.

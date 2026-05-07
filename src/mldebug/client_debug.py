@@ -263,6 +263,19 @@ class ClientDebug:
       print(f"\n=== Stamp {sid} Core PC ===")
       impl.read_all_core_pc()
 
+  def read_control_instr(self):
+    """
+    Read the SPARE_REG control instruction from all memory tiles across all stamps.
+
+    Returns:
+      dict[str, int]: Merged mapping of "MEM_TILE_{col}" to SPARE_REG value, aggregated
+        from each per-stamp AIEUtil. Stamps own disjoint columns, so keys do not collide.
+    """
+    result = {}
+    for utl in self.aie_utls:
+      result.update(utl.read_control_instr())
+    return result
+
   #
   # START Advanced Mode Specific functionality
   #

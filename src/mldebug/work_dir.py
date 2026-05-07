@@ -169,7 +169,7 @@ class WorkDir:
         If self.dump_lst is True, writes the output listing to disk.
     """
     lst_data = ""
-    exe = "llvm-objdump.elf"
+    exe = "llvm-objdump"
     archname = "aie2p"
     if is_windows():
       exe = "llvm-objdump.exe"

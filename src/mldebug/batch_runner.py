@@ -9,6 +9,8 @@ execution, multi-stamp scheduling) and the batch-mode orchestration loop.
 InteractiveController builds on this for interactive stepping.
 """
 
+import dataclasses
+import json
 import pathlib
 import sys
 import time
@@ -242,13 +244,14 @@ class BatchRunner:
       be.continue_aie()
 
     # Poll stamps until breakpoint is hit
-    max_attempts = 1200
-    while max_attempts > 0:
-      if all(be.poll_core_status() for be in bes_to_poll):
-        break
+    timeout = 10
+    start_time = time.time()
+    while time.time() - start_time < timeout:
       if self.args.backend == "test":
         break
-      max_attempts -= 1
+      time.sleep(0.1)
+      if all(be.poll_core_status() for be in bes_to_poll):
+        break
 
     # When combo events are used, it takes a few cycles to
     # hit the breakpoint, so pc might have moved
@@ -298,6 +301,7 @@ class BatchRunner:
       self.status_handle.get(p + "/" + "aie_status_error.txt")
     else:
       self.status_handle.get("aie_status_error.txt")
+    self._write_run_summary("FAIL")
     sys.exit(1)
 
   def _process_end_breakpoint(self, layer, it, sid):
@@ -341,6 +345,7 @@ class BatchRunner:
 
     if self.args.exit_at_layer and layer.layer_order >= self.args.exit_at_layer:
       LOGGER.log(f"[INFO] Exiting debugger at Layer: {layer.layer_order}")
+      self._write_run_summary("SUCCESS")
       sys.exit(0)
 
     if self.args.run_flags.layer_status and first_it:
@@ -470,6 +475,7 @@ class BatchRunner:
       self.impls[sid].continue_aie()
     LOGGER.log("\nFinished Execution")
     self._handle_fsp()
+    self._write_run_summary("SUCCESS")
 
   def _handle_fsp(self):
     """Handle end-of-run logic for VAIML Failsafe Partition mode."""
@@ -487,3 +493,17 @@ class BatchRunner:
         "to load the next Failsafe Partition and wait for "
         "`waiting for user input`. Then press Enter here."
       )
+
+  def _write_run_summary(self, status):
+    """
+    Record run state to run_summary.json
+    """
+    rsf = self.args.top_output_dir + "/run_summary.json"
+    flags_dict = dataclasses.asdict(self.args.run_flags)
+    summary = {"status": status, "run_flags": flags_dict}
+
+    try:
+      with open(rsf, "w", encoding="utf-8") as fh:
+        json.dump(summary, fh, indent=2, default=str)
+    except (IOError, OSError) as e:
+      print(f"Unable to write run summary file. {e}")

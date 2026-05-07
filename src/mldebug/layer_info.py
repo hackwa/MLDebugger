@@ -466,7 +466,7 @@ class LayerInfo:
     self.mladf_report = None
 
     has_bi = args.buffer_info and Path(args.buffer_info).is_file()
-    use_mladf = args.mladf_report and Path(args.mladf_report).is_file() and args.run_flags.enable_tg
+    use_mladf = args.mladf_report and Path(args.mladf_report).is_file() and not args.run_flags.disable_tg
     data = None
     # 1. Parse the buffer info to get Layout
     if has_bi:
@@ -877,14 +877,18 @@ class LayerInfo:
               stamp.end_pc = f.final_lock_release_pc
 
     # Under right conditions, we don't even go through iterations
-    if args.run_flags.skip_iter and args.run_flags.enable_tg:
+    if args.run_flags.skip_iter:
       for idx, layer in enumerate(self.layers):
         if idx >= len(self.layers) - 1:
           layer.lcp.num_iter = 1
           break
         next_layer_stamps = self.layers[idx+1].stamps
-        if (layer.stamps[0].name != next_layer_stamps[0].name
-          and len(layer.stamps) == len(next_layer_stamps)
-          and all(layer.stamps[i].elf_name == next_layer_stamps[i].elf_name for i in range(len(layer.stamps)))
-          ):
+        if args.run_flags.multistamp:
+          if (layer.stamps[0].name != next_layer_stamps[0].name
+            and len(layer.stamps) == len(next_layer_stamps)
+            and all(layer.stamps[i].elf_name == next_layer_stamps[i].elf_name for i in range(len(layer.stamps)))
+            ):
+            layer.lcp.num_iter = 1
+        elif (layer.stamps[0].name != next_layer_stamps[0].name
+            and layer.stamps[0].elf_name == next_layer_stamps[0].elf_name ):
           layer.lcp.num_iter = 1

@@ -116,11 +116,14 @@ def debug(args, timestamp, subgraph_name=None, fsp="0", folder_name=None):
     print(f"Debugging New Failsafe Partition: {fsp}\n")
     output_dir = f"{folder_name}_{timestamp}/{subgraph_name}/{fsp}"
     args.subgraph_name = subgraph_name
+    args.top_output_dir = f"{folder_name}_{timestamp}"
   else:
     output_dir = f"output_{time.strftime('%m%d%H%M%S')}"
+    args.top_output_dir = output_dir
 
   if args.output_dir is not None:
     output_dir = args.output_dir + "/" + output_dir
+    args.top_output_dir = args.output_dir + "/" + args.top_output_dir
   launch_debug(args, output_dir)
 
 
@@ -329,7 +332,7 @@ def app():
       "skip_iter",
       "dump_temps",
       "multistamp",
-      "enable_tg"
+      "disable_tg"
     ],
     help="Specify one or more runtime flags:\n"
     "skip_dump       : Do not dump memory\n"
@@ -341,7 +344,7 @@ def app():
     "skip_iter       : Skip iterations in batch mode when possible\n"
     #"dump_temps      : Write intermediate (.lst) files to disk\n"
     "multistamp      : Enable N Stamp/Batch mode\n",
-    #"enable_tg       : Enable Step to TG layers\n",
+    #"disable_tg      : Disable Step to TG layers\n",
     # 'mock_hang'    : Simulate hang at one of the layers in test mode
     metavar="<flag1> <flag2>",
   )
