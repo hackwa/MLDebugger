@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Custom release tag (leave blank to use v<run_number>)'
+        description: 'Release tag (Default: v<run_number>)'
         required: false
         default: ''
       release_name:
-        description: 'Custom release name (leave blank to use "Release v<run_number>")'
+        description: 'Release name (Default: "Release v<run_number>")'
         required: false
         default: ''
 
