@@ -108,8 +108,8 @@ jobs:
     - name: Delete old releases
       shell: bash
       run: |
-        # Get all releases, skip the first 10 (keep_latest), delete the rest
-        gh release list --limit 100 --json tagName --jq '.[10:][].tagName' | \
+        # Get all releases, skip the first 50 (keep_latest), delete the rest
+        gh release list --limit 200 --json tagName --jq '.[50:][].tagName' | \
         xargs -I {} gh release delete {} --yes
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
