@@ -5,13 +5,18 @@ name: MLDebugger Release
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main  # temp
+    inputs:
+      release_tag:
+        description: 'Custom release tag (leave blank to use v<run_number>)'
+        required: false
+        default: ''
+      release_name:
+        description: 'Custom release name (leave blank to use "Release v<run_number>")'
+        required: false
+        default: ''
 
 permissions:
   contents: write
-  pull-requests: write
 
 # Differentiate manual testing from automated testing
 env:
@@ -67,21 +72,34 @@ jobs:
         WHEEL_PATH=$(find dist -name "*.whl" | head -1)
         uv pip install --system "$WHEEL_PATH"
 
+    - name: Resolve release tag and name
+      id: release_meta
+      shell: bash
+      run: |
+        DEFAULT_TAG="v${{ github.run_number }}"
+        DEFAULT_NAME="Release v${{ github.run_number }}"
+        TAG="${{ github.event.inputs.release_tag }}"
+        NAME="${{ github.event.inputs.release_name }}"
+        TAG="${TAG:-$DEFAULT_TAG}"
+        NAME="${NAME:-$DEFAULT_NAME}"
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "name=$NAME" >> $GITHUB_OUTPUT
+
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: v${{ github.run_number }}
-        release_name: Release v${{ github.run_number }}
+        tag_name: ${{ steps.release_meta.outputs.tag }}
+        release_name: ${{ steps.release_meta.outputs.name }}
         draft: false
         prerelease: false
 
     - name: Upload Assets to Release
       run: |
         # Upload only the Wheel (DLL is already inside it)
-        gh release upload v${{ github.run_number }} \
+        gh release upload "${{ steps.release_meta.outputs.tag }}" \
           "${{ steps.wheel-path.outputs.wheel_path }}" \
           --clobber
       env:
