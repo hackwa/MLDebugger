@@ -8,7 +8,7 @@ Core Dump Backend - Read-only backend for analyzing core dumps
 import struct
 from pathlib import Path
 from mldebug.utils import print_tile_grid
-from mldebug.arch import AIE_DEV_PHX, AIE_DEV_STX, AIE_DEV_TEL, AIE_DEV_NPU3
+from mldebug.arch import AIE_DEV_PHX, AIE_DEV_STX, AIE_DEV_TEL, AIE_DEV_NPU3, load_aie_arch
 from .backend_interface import BackendInterface
 
 try:
@@ -62,7 +62,7 @@ class CoreDumpFallbackReader:
   Pure Python fallback implementation for reading core dump files.
   Replicates the C++ CoreDumpDataAccessBackend logic.
   """
-  def __init__(self, core_dump_file, dev_name, no_header=False):
+  def __init__(self, core_dump_file, dev_name, no_header=False, args=None):
     """
     Initialize the fallback reader
 
@@ -70,9 +70,11 @@ class CoreDumpFallbackReader:
       core_dump_file (str): Path to the binary core dump file
       dev_name (str): Device name (phx, stx, telluride, npu3)
       no_header (bool): If True, skip header parsing and treat data as starting at offset 0
+      args: Used to update device and aie_iface.
     """
     self.filename = core_dump_file
     self.dev_name = dev_name.lower()
+    self.args = args
     self.file_handle = None
 
     # Without a header to parse, we have no way to recover from an unknown device name.
@@ -165,7 +167,8 @@ class CoreDumpFallbackReader:
       if len(metadata_data) != 6:
         raise RuntimeError("Core dump file is corrupted: cannot read device metadata")
 
-      hw_gen, core_row_start, mem_row_start, mem_tile_rows, total_rows, total_cols = struct.unpack("<BBBBBB", metadata_data)
+      hw_gen, core_row_start, mem_row_start, mem_tile_rows, total_rows, total_cols = (
+          struct.unpack("<BBBBBB", metadata_data))
 
       # Detect device from header hwGen and override dev_name/metadata
       detected_dev = None
@@ -185,6 +188,13 @@ class CoreDumpFallbackReader:
 
       self.dev_name = detected_dev
       self.metadata = DEVICE_CONFIGS[detected_dev]
+
+      # Refresh args.aie_iface so the rest of the tool uses the architecture
+      # that matches the device baked into the core dump.
+      if self.args:
+        self.args.device = detected_dev
+        self.args.aie_iface = load_aie_arch(detected_dev)
+        self.args.aie_iface.init(detected_dev == AIE_DEV_PHX)
 
       expected_core_row_start = self.metadata["core_row_start"]
       expected_mem_row_start = self.metadata["mem_row_start"]
@@ -336,7 +346,7 @@ class CoreDumpImpl(BackendInterface):
   """
 
   is_offline = True
-  def __init__(self, aie_overlay_tiles, ctx_id, pid, dev_name, core_dump_file=None, no_header=False) -> None:
+  def __init__(self, aie_overlay_tiles, ctx_id, pid, dev_name, core_dump_file=None, no_header=False, args=None) -> None:
     """
     Initialize the Core Dump backend
 
@@ -348,6 +358,7 @@ class CoreDumpImpl(BackendInterface):
       core_dump_file: Path to core dump file (required)
       no_header: If True, parse core dump assuming no header (data starts at offset 0).
                  Forces use of the Python fallback reader.
+      args: Used for device management
     """
     self.overlay_aie_core_tiles = aie_overlay_tiles
     self.pc_brkpts = [0, 0]
@@ -360,7 +371,8 @@ class CoreDumpImpl(BackendInterface):
 
     if no_header or not HAS_XRT_BACKEND:
       # Python fallback reader is required to support headerless parsing
-      #print("[INFO] --no_header specified: using Python fallback reader (C++ binding does not support headerless mode)")
+      #print("[INFO] --no_header specified: using Python fallback reader "
+      #      "(C++ binding does not support headerless mode)")
       self.use_fallback = True
     else:
       # Try to initialize the C++ binding first
@@ -371,7 +383,7 @@ class CoreDumpImpl(BackendInterface):
         self.use_fallback = True
 
     if self.use_fallback:
-      self.fallback_reader = CoreDumpFallbackReader(core_dump_file, dev_name, no_header=no_header)
+      self.fallback_reader = CoreDumpFallbackReader(core_dump_file, dev_name, no_header=no_header, args=args)
 
     print("[INFO] Core Dump backend is read-only. Write/control operations will be ignored.")
 
