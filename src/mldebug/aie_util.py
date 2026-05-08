@@ -250,7 +250,7 @@ class AIEUtil:
     """
     spare_reg = self.aie_iface.Memory_tile_registers["SPARE_REG"]
     return {
-      f"MEM_TILE_{c}": self.impl.read_register(c, r, spare_reg)
+      f"MEM_TILE_{c}{r}": self.impl.read_register(c, r, spare_reg)
       for c, r in self._filter_tiles(self.aie_iface.MEM_TILE_T)
     }
 
