@@ -157,23 +157,21 @@ class AIEUtil:
     perf_cntr_event = self._get_eventid("PERF_CNT_1_CORE")
     write(reg_map["DEBUG_CONTROL1"], perf_cntr_event << 16)
     self.impl.continue_aie()
-    # Step3: Poll until the perf counter reaches the specified count
-    timeout = 20
+    # Step3: Poll all tiles until every PERF_CNTR_1 reaches the specified count.
+    timeout = 10
     start_time = time.time()
-    # Poll one tile
-    while self._read_ref_tile(reg_map["PERF_CNTR_1"]) != count:
-      time.sleep(0.1)
+    perf_cntr_1 = reg_map["PERF_CNTR_1"]
+    while True:
+      values = self.read_aie_regs(perf_cntr_1)
+      if all(v == count for v in values.values()):
+        break
       if time.time() - start_time > timeout:
-        LOGGER.log(f"{sid}: Timeout on skip {count} iterations! Design might be hung.")
-        print(self.read_aie_regs(self.aie_iface.Core_registers["PERF_CNTR_1"]))
+        LOGGER.log(
+          f"{sid}: Timeout waiting for skip {count} iterations across tiles! "
+          f"Design might be hung. Values={values}"
+        )
         return False
-
-    # Step5: Check all tiles for Sanity
-    all_values = list(self.read_aie_regs(self.aie_iface.Core_registers["PERF_CNTR_1"]).values())
-    if not all(c == count for c in all_values):
-      LOGGER.log(f"{sid}: Timeout on skip {count} iterations! Design might be hung.")
-      print(self.read_aie_regs(self.aie_iface.Core_registers["PERF_CNTR_1"]))
-      return False
+      time.sleep(0.1)
 
     # Step6: Reset debug control to stop at program counter event
     pc_event = self._get_eventid("PC_0_CORE")
