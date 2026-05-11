@@ -70,5 +70,4 @@ def create_backend(backend_type, config):
   return core_dump_mod.CoreDumpImpl(
     config.tiles, config.ctx_id, config.pid, config.device,
     core_dump_file=config.core_dump_file, no_header=config.no_header,
-    args=config.args,
   )

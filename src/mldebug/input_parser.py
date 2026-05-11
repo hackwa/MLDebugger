@@ -17,6 +17,7 @@ import sys
 import re
 
 from mldebug.arch import load_aie_arch, AIE_DEV_PHX, AIE_DEV_STX, AIE_DEV_TEL
+from mldebug.backend.core_dump_impl import CoreDumpFallbackReader
 from mldebug.utils import LOGGER, is_aarch64, is_windows
 
 @dataclass
@@ -200,6 +201,15 @@ def set_device(args) -> None:
   endmsg = "\n"
   if not args.device:
     endmsg = " Use -d to specify a diferent device.\n"
+    # For core dumps, the device is baked into the file header. Detect it now
+    # so the overlay (built before the backend) uses the correct aie_iface.
+    if getattr(args, "core_dump", None) and not getattr(args, "no_header", False):
+      cd_dev = CoreDumpFallbackReader.peek_device(args.core_dump)
+      if cd_dev:
+        args.device = cd_dev
+        print(f"[INFO] Using AIE Device: {args.device} (detected from core dump header).")
+        return
+
     # if on ARM, default is telluride else STX
     args.device = AIE_DEV_TEL if is_aarch64() else AIE_DEV_STX
     genstr = "XAIE_DEV_GEN_AIE2P"

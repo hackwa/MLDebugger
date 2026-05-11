@@ -8,7 +8,7 @@ Core Dump Backend - Read-only backend for analyzing core dumps
 import struct
 from pathlib import Path
 from mldebug.utils import print_tile_grid
-from mldebug.arch import AIE_DEV_PHX, AIE_DEV_STX, AIE_DEV_TEL, AIE_DEV_NPU3, load_aie_arch
+from mldebug.arch import AIE_DEV_PHX, AIE_DEV_STX, AIE_DEV_TEL, AIE_DEV_NPU3
 from .backend_interface import BackendInterface
 
 try:
@@ -62,7 +62,7 @@ class CoreDumpFallbackReader:
   Pure Python fallback implementation for reading core dump files.
   Replicates the C++ CoreDumpDataAccessBackend logic.
   """
-  def __init__(self, core_dump_file, dev_name, no_header=False, args=None):
+  def __init__(self, core_dump_file, dev_name, no_header=False):
     """
     Initialize the fallback reader
 
@@ -70,20 +70,15 @@ class CoreDumpFallbackReader:
       core_dump_file (str): Path to the binary core dump file
       dev_name (str): Device name (phx, stx, telluride, npu3)
       no_header (bool): If True, skip header parsing and treat data as starting at offset 0
-      args: Used to update device and aie_iface.
     """
     self.filename = core_dump_file
     self.dev_name = dev_name.lower()
-    self.args = args
     self.file_handle = None
 
-    # Without a header to parse, we have no way to recover from an unknown device name.
-    # With a header, _parse_header() will detect/override dev_name and metadata.
-    if no_header and self.dev_name not in DEVICE_CONFIGS:
+    if self.dev_name not in DEVICE_CONFIGS:
       raise ValueError(f"Unknown device: {dev_name}. Supported: {list(DEVICE_CONFIGS.keys())}")
 
-    # Provisional metadata; may be replaced by _parse_header() based on header hwGen.
-    self.metadata = DEVICE_CONFIGS.get(self.dev_name)
+    self.metadata = DEVICE_CONFIGS[self.dev_name]
     self.header_size = 256  # Default header size
 
     # Open the binary dump file
@@ -119,9 +114,11 @@ class CoreDumpFallbackReader:
     if self.file_handle:
       self.file_handle.close()
 
-  def _parse_header(self):
+  @staticmethod
+  def peek_device(filename):
     """
-    Parse the core dump file header.
+    Read the core dump header, print its contents, and return the device name.
+
     Header structure (from C++ coreDumpHeader):
       - char magicNumber[4]: "NPU" (4 bytes)
       - uint32_t versionNum: Version number (4 bytes)
@@ -132,12 +129,57 @@ class CoreDumpFallbackReader:
       - uint8_t memTileRows: Number of memory tile rows (1 byte)
       - uint8_t totalNumRows: Total number of rows (1 byte)
       - uint8_t totalNumCols: Total number of columns (1 byte)
+
+    Returns the matching device name from DEVICE_CONFIGS, or None if the file
+    is missing/unreadable, lacks the "NPU" magic, or has an unknown hwGen.
+    """
+    if not filename or not Path(filename).exists():
+      return None
+    try:
+      with open(filename, "rb") as f:
+        magic = f.read(4)
+        if magic[:3] != b"NPU":
+          return None
+        header = f.read(14)
+        if len(header) != 14:
+          return None
+    except OSError:
+      return None
+
+    version_num, header_size = struct.unpack("<II", header[:8])
+    hw_gen, core_row_start, mem_row_start, mem_tile_rows, total_rows, total_cols = (
+      struct.unpack("<BBBBBB", header[8:14]))
+
+    detected = None
+    for name, cfg in DEVICE_CONFIGS.items():
+      if cfg["hwGen"] == hw_gen:
+        detected = name
+        break
+
+    print( "[INFO] Core dump header:")
+    print(f"  Magic: {magic.decode('ascii', errors='ignore').rstrip(chr(0))}")
+    print(f"  Version: {version_num}")
+    print(f"  Header size: {header_size} bytes")
+    print(f"  Core row start: {core_row_start}")
+    print(f"  Mem row start: {mem_row_start}")
+    print(f"  Mem tile rows: {mem_tile_rows}")
+    print(f"  Total rows:  {total_rows}")
+    print(f"  Total cols: {total_cols}")
+
+    return detected
+
+  def _parse_header(self):
+    """
+    Parse the core dump file header to learn header_size.
+
+    Device detection is handled earlier (see ``peek_device`` and
+    ``set_device``); this only validates the magic number and reads the
+    header size so we know where the tile data starts.
     """
     assert self.file_handle is not None
     try:
       self.file_handle.seek(0)
 
-      # Read magic number (4 bytes)
       magic = self.file_handle.read(4)
       if len(magic) != 4:
         raise RuntimeError("Core dump file is too small or corrupted: cannot read header magic number")
@@ -146,75 +188,19 @@ class CoreDumpFallbackReader:
       if magic_str != "NPU":
         raise ValueError(f"Invalid core dump file format: expected magic number 'NPU', got '{magic_str}'")
 
-      # Read version number (4 bytes, little-endian uint32)
-      version_data = self.file_handle.read(4)
-      if len(version_data) != 4:
+      # Skip versionNum (4 bytes); read headerSize (4 bytes, little-endian uint32).
+      if len(self.file_handle.read(4)) != 4:
         raise RuntimeError("Core dump file is corrupted: cannot read version number")
-      version_num = struct.unpack("<I", version_data)[0]
 
-      # Read header size (4 bytes, little-endian uint32)
       header_size_data = self.file_handle.read(4)
       if len(header_size_data) != 4:
         raise RuntimeError("Core dump file is corrupted: cannot read header size")
       self.header_size = struct.unpack("<I", header_size_data)[0]
 
-      # Validate header size is reasonable
-      if self.header_size < 18 or self.header_size > 1024 * 1024:  # Between 18 bytes and 1MB
+      if self.header_size < 18 or self.header_size > 1024 * 1024:
         raise ValueError(f"Invalid header size in core dump: {self.header_size} bytes (expected 18-1048576)")
 
-      # Read device metadata (6 bytes)
-      metadata_data = self.file_handle.read(6)
-      if len(metadata_data) != 6:
-        raise RuntimeError("Core dump file is corrupted: cannot read device metadata")
-
-      hw_gen, core_row_start, mem_row_start, mem_tile_rows, total_rows, total_cols = (
-          struct.unpack("<BBBBBB", metadata_data))
-
-      # Detect device from header hwGen and override dev_name/metadata
-      detected_dev = None
-      for name, cfg in DEVICE_CONFIGS.items():
-        if cfg["hwGen"] == hw_gen:
-          detected_dev = name
-          break
-
-      if detected_dev is None:
-        raise ValueError(f"Unknown hwGen {hw_gen} in core dump header; supported: "
-                         f"{[(n, c['hwGen']) for n, c in DEVICE_CONFIGS.items()]}")
-
-      if detected_dev != self.dev_name:
-        print(f"[INFO] Device detected from core dump header: \'{detected_dev}\'; overriding '{self.dev_name}'")
-      else:
-        print(f"[INFO] Device detected from core dump header: '{detected_dev}'")
-
-      self.dev_name = detected_dev
-      self.metadata = DEVICE_CONFIGS[detected_dev]
-
-      # Refresh args.aie_iface so the rest of the tool uses the architecture
-      # that matches the device baked into the core dump.
-      if self.args:
-        self.args.device = detected_dev
-        self.args.aie_iface = load_aie_arch(detected_dev)
-        self.args.aie_iface.init(detected_dev == AIE_DEV_PHX)
-
-      expected_core_row_start = self.metadata["core_row_start"]
-      expected_mem_row_start = self.metadata["mem_row_start"]
-      expected_mem_tile_rows = self.metadata["memtile_rows"]
-      expected_rows = self.metadata["numrows"]
-      expected_cols = self.metadata["numcols"]
-
-      print( "[INFO] Core dump header:")
-      print(f"  Magic: {magic_str}")
-      print(f"  Version: {version_num}")
-      print(f"  Header size: {self.header_size} bytes")
-      #print(f"  HW Gen: {hw_gen} (device: {self.dev_name})")
-      print(f"  Core row start: {expected_core_row_start}")
-      print(f"  Mem row start: {expected_mem_row_start}")
-      print(f"  Mem tile rows: {expected_mem_tile_rows}")
-      print(f"  Total rows:  {expected_rows}")
-      print(f"  Total cols: {expected_cols}")
-
     except (ValueError, RuntimeError) as e:
-      # Re-raise critical errors that indicate file corruption or format issues
       raise ValueError("I/O error while reading core dump header") from e
     except OSError as e:
       raise RuntimeError("I/O error while reading core dump header") from e
@@ -346,7 +332,7 @@ class CoreDumpImpl(BackendInterface):
   """
 
   is_offline = True
-  def __init__(self, aie_overlay_tiles, ctx_id, pid, dev_name, core_dump_file=None, no_header=False, args=None) -> None:
+  def __init__(self, aie_overlay_tiles, ctx_id, pid, dev_name, core_dump_file=None, no_header=False) -> None:
     """
     Initialize the Core Dump backend
 
@@ -358,7 +344,6 @@ class CoreDumpImpl(BackendInterface):
       core_dump_file: Path to core dump file (required)
       no_header: If True, parse core dump assuming no header (data starts at offset 0).
                  Forces use of the Python fallback reader.
-      args: Used for device management
     """
     self.overlay_aie_core_tiles = aie_overlay_tiles
     self.pc_brkpts = [0, 0]
@@ -379,11 +364,11 @@ class CoreDumpImpl(BackendInterface):
       try:
         self.binding = MlDebug(list(self.overlay_aie_core_tiles), ctx_id, pid, dev_name, "debuglibrary", core_dump_file)
         print("[INFO] Core Dump backend initialized with C++ DebugLibrary")
-      except ImportError:
+      except (ImportError, TypeError):
         self.use_fallback = True
 
     if self.use_fallback:
-      self.fallback_reader = CoreDumpFallbackReader(core_dump_file, dev_name, no_header=no_header, args=args)
+      self.fallback_reader = CoreDumpFallbackReader(core_dump_file, dev_name, no_header=no_header)
 
     print("[INFO] Core Dump backend is read-only. Write/control operations will be ignored.")
 
