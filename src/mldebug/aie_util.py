@@ -158,7 +158,7 @@ class AIEUtil:
     write(reg_map["DEBUG_CONTROL1"], perf_cntr_event << 16)
     self.impl.continue_aie()
     # Step3: Poll until the perf counter reaches the specified count
-    timeout = 10
+    timeout = 20
     start_time = time.time()
     # Poll one tile
     while self._read_ref_tile(reg_map["PERF_CNTR_1"]) != count:
