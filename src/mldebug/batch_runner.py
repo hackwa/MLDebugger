@@ -192,6 +192,9 @@ class BatchRunner:
     for sid in range(1, len(self.state.pm_reload)):
       stamp_target_layers[sid] = self.state.get_next_layer_for_stamp(sid)
 
+    for utl in self.aie_utls:
+      utl.disable_ecc_event()
+
     bes_to_poll = []
     bes_to_run = []
     # Stamp0 breakpoint always scheduled

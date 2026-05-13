@@ -122,6 +122,7 @@ Core_registers = {
   "COMBO_EVENT_INPUTS_A_D": 0x34400,
   "CORE_SR1": 0x32DC0,
   "CORE_SR2": 0x32DD0,
+  "ECC_SCRUB_EVENT": 0x38110,
 }
 
 

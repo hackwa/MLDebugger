@@ -397,3 +397,12 @@ class AIEUtil:
     Read the core program counter from all AIE tiles
     """
     return self.read_aie_regs(self.aie_iface.Core_registers["CORE_PC"])
+
+  def disable_ecc_event(self):
+    """
+    Disable ECC Event for this stamp
+    """
+    if not self.aie_iface.Core_registers.get("ECC_SCRUB_EVENT"):
+      return
+    for c, r in self._filter_tiles(self.aie_iface.AIE_TILE_T):
+      self.impl.write_register(c, r, self.aie_iface.Core_registers["ECC_SCRUB_EVENT"], 0)
