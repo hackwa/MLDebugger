@@ -55,7 +55,11 @@ class MladfReport:
     if aiec_layers:
       core = f"{sid*self.cps}_0"
       if aiec_layers[0]["core_information"].get(core):
-        return aiec_layers[0]["core_information"][core]["kernel_name"]
+        try:
+          kname = aiec_layers[0]["core_information"][core]["kernel_name"]
+          return kname
+        except KeyError:
+          return ""
       else:
         print(f"[WARNING] MLADF Info for core {core} at Layer_{bilo} not found")
     return ""
@@ -83,7 +87,7 @@ class MladfReport:
     core = f"{sid*self.cps}_0"
     pm_info = {}
     if aiec_layers[0]["core_information"].get(core):
-      pm_info = aiec_layers[0]["core_information"][core]["pm_information"]
+      pm_info = aiec_layers[0]["core_information"][core].get("pm_information", {})
     else:
       return -1
 
