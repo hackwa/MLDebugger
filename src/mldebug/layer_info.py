@@ -755,7 +755,7 @@ class LayerInfo:
     if stampcount:
       self.layout[0] = stampcount
     elif data.get("layers"):
-      self.layout[0] = max(lyr.get("no_of_stamps", 1) for lyr in data["layers"] )
+      self.layout[0] = max(lyr.get("no_of_stamps", 1) for _, lyr in data["layers"].items() )
     # Else use old style
 
     # Treat mBnS as 1BnS
