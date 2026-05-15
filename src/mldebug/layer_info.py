@@ -749,6 +749,15 @@ class LayerInfo:
     self.layout = data[".meta"].get("layout")
     self.device_batch_size = data[".meta"].get("device_batch_size", 1)
 
+    # Layout now represents Full overlay but design can choose
+    # to use only a part of it
+    stampcount = data[".meta"].get("max_stamps_used")
+    if stampcount:
+      self.layout[0] = stampcount
+    elif data.get("layers"):
+      self.layout[0] = max(lyr.get("no_of_stamps", 1) for lyr in data["layers"] )
+    # Else use old style
+
     # Treat mBnS as 1BnS
     if self.device_batch_size > 1:
       if self.layout[0] > 1:
@@ -758,9 +767,6 @@ class LayerInfo:
         self.layout[0] = self.device_batch_size
         LOGGER.log("Batched design detected")
 
-    for _, e in data.items():
-      if "no_of_stamps" in e:
-        self.layout[0] = max(self.layout[0], e.get("no_of_stamps"))
     self.x2 = data[".meta"].get("flow") == "x2"
     return data
 
