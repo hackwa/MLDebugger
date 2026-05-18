@@ -13,12 +13,14 @@ import json
 import importlib
 import os
 import subprocess
-import sys
 import re
 
 from mldebug.arch import load_aie_arch, AIE_DEV_PHX, AIE_DEV_STX, AIE_DEV_TEL
 from mldebug.backend.core_dump_impl import CoreDumpFallbackReader
-from mldebug.utils import LOGGER, is_aarch64, is_windows
+from mldebug.utils import LOGGER, cleanup_and_exit, input_with_timeout, is_aarch64, is_windows
+
+# Seconds to wait at interactive prompts before giving up and exiting.
+HW_CONTEXT_INPUT_TIMEOUT_S = 60
 
 @dataclass
 class RunFlags:
@@ -126,13 +128,15 @@ def create_run_flags(args, subgraph_path: str, fsp: str, fsp_execution_order: li
   )
 
 
-def check_registry_keys(npu3=False) -> None:
+def check_registry_keys(args, npu3=False) -> None:
   """
   Checks if specific registry keys are correctly configured on Windows,
   and sets values if necessary for MLDebug operation. Exits on failure
   or after making modifications.
 
   Args:
+      args: Argument namespace. Used to drive flexmlrt cleanup on exit
+            (only when ``args.l3`` is set).
       npu3 (bool): Whether to check npu3-specific registry keys.
 
   Returns:
@@ -174,16 +178,16 @@ def check_registry_keys(npu3=False) -> None:
         f"Error: Unable to access or create registry key:"
         f" HKEY_LOCAL_MACHINE\\{key_path}. Please run tool with admin privileges."
       )
-      sys.exit(1)
+      cleanup_and_exit(args, 1)
     except ValueError:
       LOGGER.log(f"Error: Invalid registry key format: {key_path}")
-      sys.exit(1)
+      cleanup_and_exit(args, 1)
 
   if modified:
     LOGGER.log(
       "\nRegistry settings to enable MlDebug were modified. Please restart your machine for the changes to take effect."
     )
-    sys.exit(1)
+    cleanup_and_exit(args, 1)
   else:
     LOGGER.log("\nRegistry settings check passed. No modifications were necessary.")
 
@@ -252,18 +256,13 @@ def print_hw_context_table(current_contexts: dict[str, dict[str, str]]) -> None:
     LOGGER.log(f"{context:<12} {columns_str:<30} {context_data['pid']:<12} {context_data['status']:<12}")
 
 
-def check_hw_context(device: str) -> tuple[int, int]:
+def check_hw_context(args) -> tuple[int, int]:
   """
-  Finds and returns the hardware context and process ID from the xrt-smi command output.
-
-  If xrt-smi fails or no application is running, prompts the user to input ctx and pid manually.
-
-  Args:
-      device (str): Device identifier.
-
-  Returns:
-      Tuple[int, int]: Selected context ID and PID.
+  Returns (ctx_id, pid) from xrt-smi, prompting the user as a fallback.
+  Manual prompts time out after ``HW_CONTEXT_INPUT_TIMEOUT_S`` seconds and
+  call ``cleanup_and_exit(args, 1)`` on failure / timeout.
   """
+  device = args.device
   filename = "xrt-smi_output.json"
   use_shell = is_windows()
 
@@ -303,11 +302,26 @@ def check_hw_context(device: str) -> tuple[int, int]:
         pid = int(current_contexts[selected_context_id]["pid"])
       else:
         LOGGER.log("Could not find the provided context, Exiting now.")
-        sys.exit(1)
+        cleanup_and_exit(args, 1)
   except (FileNotFoundError, subprocess.CalledProcessError, json.JSONDecodeError):
-    LOGGER.log("Error with xrt-smi. Please enter ctx, pid manually.")
-    pid = int(input("Enter PID > "))
-    ctx = int(input("Enter CTX ID > "))
+    LOGGER.log(
+      f"Error with xrt-smi. Please enter ctx, pid manually "
+      f"(waiting up to {HW_CONTEXT_INPUT_TIMEOUT_S}s for each value)."
+    )
+    pid_str = input_with_timeout("Enter PID > ", HW_CONTEXT_INPUT_TIMEOUT_S)
+    if pid_str is None:
+      LOGGER.log("\nTimed out waiting for PID input. Exiting.")
+      cleanup_and_exit(args, 1)
+    ctx_str = input_with_timeout("Enter CTX ID > ", HW_CONTEXT_INPUT_TIMEOUT_S)
+    if ctx_str is None:
+      LOGGER.log("\nTimed out waiting for CTX ID input. Exiting.")
+      cleanup_and_exit(args, 1)
+    try:
+      pid = int(pid_str)
+      ctx = int(ctx_str)
+    except ValueError:
+      LOGGER.log("Invalid PID/CTX ID input. Exiting.")
+      cleanup_and_exit(args, 1)
   return ctx, pid
 
 

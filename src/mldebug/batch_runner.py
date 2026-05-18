@@ -17,7 +17,7 @@ import time
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from mldebug.utils import LOGGER, timeit
+from mldebug.utils import LOGGER, cleanup_and_exit, timeit
 
 # 16 byte pm, we assume 2 clock cycle delay
 COMBO_EVENT_MAX_DELAY_CYCLES = 32
@@ -311,7 +311,7 @@ class BatchRunner:
     else:
       self.status_handle.get("aie_status_error.txt")
     self._write_run_summary("FAIL")
-    sys.exit(1)
+    cleanup_and_exit(self.args, 1)
 
   def _process_end_breakpoint(self, layer, it, sid):
     """

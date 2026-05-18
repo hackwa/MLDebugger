@@ -9,10 +9,11 @@ callers only need to build a BackendConfig and call create_backend().
 """
 
 import importlib
-import sys
 
 from dataclasses import dataclass, field
 from typing import Any
+
+from mldebug.utils import cleanup_and_exit
 
 
 @dataclass
@@ -55,10 +56,10 @@ def create_backend(backend_type, config):
       xrt_mod = importlib.import_module("mldebug.backend.xrt_impl")
     except ModuleNotFoundError:
       print("Unable to import Backend. Python 3.10 is required on Win/Linux and 3.12 on Embedded Linux.")
-      sys.exit(1)
+      cleanup_and_exit(config.args, 1)
     except ImportError:
       print("Unable to import XRT. Please check install.")
-      sys.exit(1)
+      cleanup_and_exit(config.args, 1)
     return xrt_mod.XRTImpl(config.tiles, config.ctx_id, config.pid, config.device)
 
   if backend_type == "test":
