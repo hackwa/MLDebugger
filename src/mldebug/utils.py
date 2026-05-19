@@ -9,6 +9,8 @@ from pathlib import Path
 
 import os
 import platform
+import sys
+import threading
 import time
 
 
@@ -306,6 +308,75 @@ def print_tile_grid(title, tiles, register_values=None, format_type="hex"):
   print(col_header)
 
   print(f"{'=' * total_width}")
+
+def input_with_timeout(prompt, timeout):
+  """
+  Read a line from stdin, or return None after ``timeout`` seconds.
+  Uses a daemon thread so it works on Windows (no signal.alarm).
+  """
+  result = []
+
+  def _reader():
+    try:
+      result.append(input(prompt))
+    except EOFError:
+      pass
+
+  t = threading.Thread(target=_reader, daemon=True)
+  t.start()
+  t.join(timeout)
+  if t.is_alive():
+    return None
+  return result[0] if result else None
+
+
+# Tracks the live DebugServer so cleanup_and_exit can close it on exit.
+_active_debug_server = None
+
+
+def register_debug_server(server):
+  """Register the live DebugServer (or None to clear)."""
+  global _active_debug_server  # pylint: disable=global-statement
+  _active_debug_server = server
+
+
+def terminate_flexml_connection(timeout=5):
+  """
+  Spin up a brief DebugServer, send TERMINATE_CONNECTION, and close.
+  Best-effort cleanup used on unplanned exit; all errors are swallowed.
+  """
+  # Import lazily to avoid a circular import (debug_server imports LOGGER).
+  from mldebug.debug_server import DebugServer  # pylint: disable=import-outside-toplevel
+
+  try:
+    server = DebugServer(
+      output_dir="",
+      is_testmode=False,
+      connect_timeout=timeout,
+    )
+    server.close()
+  except Exception as e:  # pylint: disable=broad-except
+    LOGGER.log(f"[WARN] flexmlrt cleanup failed: {e}")
+
+
+def cleanup_and_exit(args, code=1):
+  """
+  Exit, first tearing down the flexmlrt connection when ``args.l3`` is set.
+  Closes the registered DebugServer if any, else starts a brief one to send
+  TERMINATE_CONNECTION (covers exits that happen before ClientDebug runs).
+  """
+  global _active_debug_server  # pylint: disable=global-statement
+  if args is not None and getattr(args, "l3", False):
+    if _active_debug_server is not None:
+      try:
+        _active_debug_server.close()
+      except Exception as e:  # pylint: disable=broad-except
+        LOGGER.log(f"[WARN] Failed to close active debug server: {e}")
+      _active_debug_server = None
+    else:
+      terminate_flexml_connection()
+  sys.exit(code)
+
 
 def is_aarch64():
   """

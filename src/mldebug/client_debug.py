@@ -21,7 +21,7 @@ from mldebug.debug_server import DebugServer
 from mldebug.interactive_controller import InteractiveController
 from mldebug.layer_info import LayerInfo
 from mldebug.memory_dumper import MemoryDumper
-from mldebug.utils import LOGGER
+from mldebug.utils import LOGGER, register_debug_server
 
 
 class ClientDebug:
@@ -51,7 +51,12 @@ class ClientDebug:
 
     # Create this first so that connection will be aborted in case of crash
     if self.args.automated_debug or self.args.l3:
-      debug_server = DebugServer(self.args.subgraph_name, self.output_dir, self.args.backend == "test")
+      debug_server = DebugServer(
+        self.output_dir, self.args.backend == "test", subgraph_name=self.args.subgraph_name,
+      )
+      # Track the live server so cleanup_and_exit() at unplanned exit points
+      # can send TERMINATE_CONNECTION to flexmlrt.
+      register_debug_server(debug_server)
 
     try:
       self.design_info = LayerInfo(args)

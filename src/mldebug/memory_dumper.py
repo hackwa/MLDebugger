@@ -236,7 +236,7 @@ class MemoryDumper:
     """
     if not self.debug_server:
       LOGGER.log("[INFO] Starting L3 debug server...")
-      self.debug_server = DebugServer(None, self.output_dir, self.args.backend == "test")
+      self.debug_server = DebugServer(self.output_dir, self.args.backend == "test")
       if not self.debug_server.client_socket and self.args.backend != "test":
         LOGGER.log(
           "[ERROR] Failed to connect to FlexML runtime. Make sure FlexML is running and waiting for debugger connection."

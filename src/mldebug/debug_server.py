@@ -19,7 +19,10 @@ class DebugServer:
   and communication with flexmlrt for buffer dump and termination requests.
   """
 
-  def __init__(self, subgraph_name, output_dir, is_testmode, bind_addr=("127.0.0.1", 9000)) -> None:
+  def __init__(
+    self, output_dir, is_testmode, subgraph_name="subgraph",
+    bind_addr=("127.0.0.1", 9000), connect_timeout=None,
+  ) -> None:
     """
     Initialize the DebugServer instance.
 
@@ -28,11 +31,14 @@ class DebugServer:
       output_dir (str): Directory where buffer dumps will be stored.
       is_testmode (bool): Enables test mode, which disables socket operations for CI/testing.
       bind_addr (tuple): Address and port to bind the debug server socket.
+      connect_timeout (float, optional): If set, accept() gives up after this
+        many seconds; used by cleanup paths to avoid hanging forever.
     """
     self.bind_addr = bind_addr
     self.subgraph_name = subgraph_name
     self.output_dir = output_dir
     self.is_testmode = is_testmode
+    self.connect_timeout = connect_timeout
     self.server_socket = None
     self.client_socket = None
     self.start()
@@ -64,9 +70,20 @@ class DebugServer:
         self.server_socket.listen(1)
         LOGGER.verbose_print(f"Listening on {self.bind_addr}...")
 
+      if self.connect_timeout is not None:
+        self.server_socket.settimeout(self.connect_timeout)
       self.client_socket, client_address = self.server_socket.accept()
+      # Reset to blocking mode for subsequent send/recv.
+      if self.connect_timeout is not None:
+        self.server_socket.settimeout(None)
+        self.client_socket.settimeout(None)
       LOGGER.log(f"[INFO] Connected to FlexmlRT on {client_address}")
       return True
+    except socket.timeout:
+      LOGGER.verbose_print(
+        f"Timed out after {self.connect_timeout}s waiting for flexmlrt to connect."
+      )
+      return False
     except socket.error as e:
       LOGGER.verbose_print(f"Socket error during setup or connection: {e}")
       return False

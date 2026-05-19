@@ -147,7 +147,7 @@ def launch_debug(args, output_dir):
   context_id = 0
   pid = 0
   if args.backend == "xrt":
-    context_id, pid = check_hw_context(args.device)
+    context_id, pid = check_hw_context(args)
   # Top debug handle
   _apply_unsupported_kernels_from_args(args)
   handle = ClientDebug(args, context_id, pid, output_dir)
@@ -370,7 +370,7 @@ def app():
   for fsp in fsp_execution_order:
     create_run_flags(args, subgraph_folder_path, fsp, fsp_execution_order)
     if not registry_checked and args.backend == "xrt" and is_windows():
-      check_registry_keys(args.device == AIE_DEV_NPU3)
+      check_registry_keys(args, args.device == AIE_DEV_NPU3)
       registry_checked = True
     debug(args, timestamp, subgraph_name, fsp, model_folder_name)
     if args.dump_aie_status:
