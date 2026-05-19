@@ -296,7 +296,10 @@ def check_hw_context(args) -> tuple[int, int]:
     else:
       print_hw_context_table(current_contexts)
       # Ask user
-      selected_context_id = input("Multiple Contexts Found. Please enter the Context ID you want to select: ")
+      selected_context_id = input_with_timeout(
+        "Multiple Contexts Found. Please enter the Context ID you want to select: ",
+        HW_CONTEXT_INPUT_TIMEOUT_S,
+      )
       if selected_context_id in current_contexts:
         ctx = int(selected_context_id)
         pid = int(current_contexts[selected_context_id]["pid"])

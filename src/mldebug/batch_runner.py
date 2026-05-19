@@ -511,6 +511,7 @@ class BatchRunner:
     summary = {"status": status, "run_flags": flags_dict}
 
     try:
+      pathlib.Path(self.args.top_output_dir).mkdir(parents=True, exist_ok=True)
       with open(rsf, "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2, default=str)
     except (IOError, OSError) as e:
