@@ -10,16 +10,6 @@ import time
 from mldebug.utils import LOGGER
 
 
-def pcs_match_target(pcs, target_pc, allow_combo_delay=False):
-  """
-  PC matching utility
-  """
-  # AIE PC can lag the breakpoint by 1-2 cycles; combo events add more delay.
-  # 8 cycles is a safe margin for most cases
-  max_delay = 32 if allow_combo_delay else 1
-  return all(abs(pc - target_pc) < max_delay for pc in pcs)
-
-
 class AIEUtil:
   """
   AIE Utility class
@@ -212,11 +202,11 @@ class AIEUtil:
           f"{sid}: Invalid result in skip_iterations_to_lock_acq. "
           f"target_pc={lock_acq_pc} pcs={pcs} "
         )
-    else:
-      LOGGER.log(
-          f"{sid}: Successfully skipped to lock acq pc. "
-          f"target_pc={lock_acq_pc} pcs={pcs} "
-        )
+    #else:
+    #  LOGGER.log(
+    #      f"{sid}: Successfully skipped to lock acq pc. "
+    #      f"target_pc={lock_acq_pc} pcs={pcs} "
+    #    )
     return is_valid
 
   def read_performance_counters(self, c, r):
@@ -456,7 +446,6 @@ class AIEUtil:
     Single step an aie core
     """
     offset = self.aie_iface.Core_registers["DEBUG_CONTROL0"]
-    print(f"single step {c} {r}")
     self.impl.write_register(c, r, offset, (1<<2))
 
   def disable_ecc_event(self):
@@ -475,25 +464,29 @@ class AIEUtil:
     # AIE PC can lag the breakpoint by 1-2 cycles; combo events add more delay.
     # 8 cycles is a safe margin for most cases
     num_pipeline_stages = 5
-    max_delay = 32 if allow_combo_delay else 1
-    pc_matches = all(abs(pc - target_pc) < max_delay for pc in pcs)
+    max_pc_tolerance = 32
+
+    delay_allowed = max_pc_tolerance if allow_combo_delay else 1
+    pc_matches = all(abs(pc - target_pc) < delay_allowed for pc in pcs)
     if not pc_matches:
+      # some tiles aren't halted
+      if not self.impl.poll_core_status():
+        return False
       pc_dict = self.read_core_pc_dict()
       for tile, val in pc_dict.items():
-        if abs(target_pc - val) > 32:
-          return False
         if target_pc == val:
           continue
-        print(f"Try to reconcile tile {tile} {val}")
+        #print(f"Try to reconcile tile {tile} {val}")
         col, row = tile
         for _ in range(num_pipeline_stages):
           self.single_step_core(col, row)
           newpc = self.read_core_pc_tile(col, row)
           delta = newpc - target_pc
-          if target_pc == newpc or (delta > 0 and delta < 32) :
+          if target_pc == newpc or max_pc_tolerance > delta > 0 :
             break
-        # if target pc is slightly ahead, we should be okay
-        if target_pc < self.read_core_pc_tile(col, row):
+        # if core pc is slightly ahead, we should be okay
+        # but if not, execution can run into trouble later
+        if target_pc > self.read_core_pc_tile(col, row):
           return False
-        print("Successfully reconciled")
+        #print("Successfully reconciled")
     return True
