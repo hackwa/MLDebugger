@@ -481,7 +481,7 @@ class AIEUtil:
       pc_dict = self.read_core_pc_dict()
       for tile, val in pc_dict.items():
         if abs(target_pc - val) > 32:
-          break
+          return False
         if target_pc == val:
           continue
         print(f"Try to reconcile tile {tile} {val}")
@@ -494,6 +494,6 @@ class AIEUtil:
             break
         # if target pc is slightly ahead, we should be okay
         if target_pc < self.read_core_pc_tile(col, row):
-          break
+          return False
         print("Successfully reconciled")
-    return pc_matches
+    return True
