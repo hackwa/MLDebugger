@@ -17,10 +17,8 @@ import time
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from mldebug.aie_util import pcs_match_target
 from mldebug.utils import LOGGER, cleanup_and_exit, timeit
-
-# 16 byte pm, we assume 2 clock cycle delay
-COMBO_EVENT_MAX_DELAY_CYCLES = 32
 
 
 class BatchRunner:
@@ -265,9 +263,7 @@ class BatchRunner:
         pcs = self.impls[sid].read_core_pc(True)
 
         # combo event trigger has one cycle delay
-        is_correct_pc = all(stamp.start_pc == pc for pc in pcs)
-        if not is_correct_pc and pml:
-          is_correct_pc = all(pc - stamp.start_pc < COMBO_EVENT_MAX_DELAY_CYCLES for pc in pcs)
+        is_correct_pc = pcs_match_target(pcs, stamp.start_pc, allow_combo_delay=pml)
 
         if is_correct_pc:
           self._process_start_breakpoint(next_layer, 1, sid=sid)
@@ -406,15 +402,18 @@ class BatchRunner:
 
     if self.args.run_flags.skip_iter:
       self.state.error = not self.aie_utls[sid].skip_iterations(target_itr - cur_it, sid)
+    elif self.args.run_flags.skip_iter2:
+      self.state.error = not self.aie_utls[sid].skip_iterations_to_lock_acq(
+         self.design_info.work_dir.post_layer_lock_acq_pcs[sid], target_itr - cur_it, sid)
     else:
       while cur_it < target_itr:
         self.hit_next_breakpoint(sid)
         all_pc = self.impls[sid].read_core_pc(True)
-        if all(stamp.start_pc == pc for pc in all_pc):
+        if pcs_match_target(all_pc, stamp.start_pc):
           if cur_it % layer.lcp.depth_iter != 0 or skip_end_pc:
             cur_it += 1
           self._process_start_breakpoint(layer, cur_it, sid=sid)
-        elif all(stamp.end_pc == pc for pc in all_pc):
+        elif pcs_match_target(all_pc, stamp.end_pc):
           cur_it += 1
           self._process_end_breakpoint(layer, cur_it, sid)
         else:

@@ -9,6 +9,17 @@ import time
 
 from mldebug.utils import LOGGER
 
+
+def pcs_match_target(pcs, target_pc, allow_combo_delay=False):
+  """
+  PC matching utility
+  """
+  # AIE PC can lag the breakpoint by 1-2 cycles; combo events add more delay.
+  # 8 cycles is a safe margin for most cases
+  max_delay = 32 if allow_combo_delay else 8
+  return all(abs(pc - target_pc) < max_delay for pc in pcs)
+
+
 class AIEUtil:
   """
   AIE Utility class
@@ -162,6 +173,7 @@ class AIEUtil:
     start_time = time.time()
     perf_cntr_1 = reg_map["PERF_CNTR_1"]
     while True:
+      time.sleep(0.1)
       values = self.read_aie_regs(perf_cntr_1)
       if all(v == count for v in values.values()):
         break
@@ -171,12 +183,41 @@ class AIEUtil:
           f"Design might be hung. Values={values}"
         )
         return False
-      time.sleep(0.1)
 
     # Step6: Reset debug control to stop at program counter event
     pc_event = self._get_eventid("PC_0_CORE")
     write(reg_map["DEBUG_CONTROL1"], pc_event << 16)
     return True
+
+  def skip_iterations_to_lock_acq(self, lock_acq_pc, count, sid):
+    """
+    Skip iterations without using counter
+    """
+    if self._is_test_mode() or count == 0:
+      return True
+
+    self.impl.set_pc_breakpoint(lock_acq_pc)
+    self.impl.continue_aie()
+    timeout = 10
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+      time.sleep(0.1)
+      if self.impl.poll_core_status():
+        break
+
+    pcs = self.impl.read_core_pc(True)
+    is_valid =  pcs_match_target(pcs, lock_acq_pc)
+    if not is_valid:
+      LOGGER.log(
+          f"{sid}: Invalid result in skip_iterations_to_lock_acq. "
+          f"target_pc={lock_acq_pc} pcs={pcs} "
+        )
+    else:
+      LOGGER.log(
+          f"{sid}: Successfully skipped to lock acq pc. "
+          f"target_pc={lock_acq_pc} pcs={pcs} "
+        )
+    return is_valid
 
   def read_performance_counters(self, c, r):
     """
