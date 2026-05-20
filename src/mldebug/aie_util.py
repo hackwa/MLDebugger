@@ -456,9 +456,8 @@ class AIEUtil:
     Single step an aie core
     """
     offset = self.aie_iface.Core_registers["DEBUG_CONTROL0"]
-    regval = self.impl.read_register(c, r, offset)
-    regval += (1<<2)
-    self.impl.write_register(c, r, offset, regval)
+    print(f"single step {c} {r}")
+    self.impl.write_register(c, r, offset, (1<<2))
 
   def disable_ecc_event(self):
     """
@@ -491,7 +490,8 @@ class AIEUtil:
           self.single_step_core(col, row)
           if target_pc == self.read_core_pc_tile(col, row):
             break
-        if target_pc != self.read_core_pc_tile(col, row):
+        # if target pc is slightly ahead, we should be okay
+        if target_pc < self.read_core_pc_tile(col, row):
           break
         print("Successfully reconciled")
     return pc_matches
