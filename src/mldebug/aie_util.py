@@ -16,7 +16,7 @@ def pcs_match_target(pcs, target_pc, allow_combo_delay=False):
   """
   # AIE PC can lag the breakpoint by 1-2 cycles; combo events add more delay.
   # 8 cycles is a safe margin for most cases
-  max_delay = 32 if allow_combo_delay else 8
+  max_delay = 32 if allow_combo_delay else 1
   return all(abs(pc - target_pc) < max_delay for pc in pcs)
 
 
@@ -206,7 +206,7 @@ class AIEUtil:
         break
 
     pcs = self.impl.read_core_pc(True)
-    is_valid =  pcs_match_target(pcs, lock_acq_pc)
+    is_valid =  self.pcs_match_target(pcs, lock_acq_pc)
     if not is_valid:
       LOGGER.log(
           f"{sid}: Invalid result in skip_iterations_to_lock_acq. "
@@ -439,6 +439,27 @@ class AIEUtil:
     """
     return self.read_aie_regs(self.aie_iface.Core_registers["CORE_PC"])
 
+  def read_core_pc_dict(self):
+    """
+    Read the core program counter from all AIE tiles
+    """
+    return self.read_aie_regs(self.aie_iface.Core_registers["CORE_PC"])
+
+  def read_core_pc_tile(self, c, r):
+    """
+    Read the core program counter from all AIE tiles
+    """
+    return self.impl.read_register(c, r, self.aie_iface.Core_registers["CORE_PC"])
+
+  def single_step_core(self, c, r):
+    """
+    Single step an aie core
+    """
+    offset = self.aie_iface.Core_registers["DEBUG_CONTROL0"]
+    regval = self.impl.read_register(c, r, offset)
+    regval += (1<<2)
+    self.impl.write_register(c, r, offset, regval)
+
   def disable_ecc_event(self):
     """
     Disable ECC Event for this stamp
@@ -447,3 +468,30 @@ class AIEUtil:
       return
     for c, r in self._filter_tiles(self.aie_iface.AIE_TILE_T):
       self.impl.write_register(c, r, self.aie_iface.Core_registers["ECC_SCRUB_EVENT"], 0)
+
+  def pcs_match_target(self, pcs, target_pc, allow_combo_delay=False):
+    """
+    PC matching utility
+    """
+    # AIE PC can lag the breakpoint by 1-2 cycles; combo events add more delay.
+    # 8 cycles is a safe margin for most cases
+    num_pipeline_stages = 5
+    max_delay = 32 if allow_combo_delay else 1
+    pc_matches = all(abs(pc - target_pc) < max_delay for pc in pcs)
+    if not pc_matches:
+      pc_dict = self.read_core_pc_dict()
+      for tile, val in pc_dict.items():
+        if abs(target_pc - val) > 32:
+          break
+        if target_pc == val:
+          continue
+        print(f"Try to reconcile tile {tile} {val}")
+        col, row = tile
+        for _ in range(num_pipeline_stages):
+          self.single_step_core(col, row)
+          if target_pc == self.read_core_pc_tile(col, row):
+            break
+        if target_pc != self.read_core_pc_tile(col, row):
+          break
+        print("Successfully reconciled")
+    return pc_matches
