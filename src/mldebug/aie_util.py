@@ -488,7 +488,9 @@ class AIEUtil:
         col, row = tile
         for _ in range(num_pipeline_stages):
           self.single_step_core(col, row)
-          if target_pc == self.read_core_pc_tile(col, row):
+          newpc = self.read_core_pc_tile(col, row)
+          delta = newpc - target_pc
+          if target_pc == newpc or (delta > 0 and delta < 32) :
             break
         # if target pc is slightly ahead, we should be okay
         if target_pc < self.read_core_pc_tile(col, row):
