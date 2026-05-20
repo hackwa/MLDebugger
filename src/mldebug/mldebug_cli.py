@@ -332,7 +332,8 @@ def app():
       "skip_iter",
       "dump_temps",
       "multistamp",
-      "disable_tg"
+      "disable_tg",
+      "skip_iter2"
     ],
     help="Specify one or more runtime flags:\n"
     "skip_dump       : Do not dump memory\n"
