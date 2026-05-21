@@ -343,7 +343,7 @@ def app():
     "l1_ofm_dump     : Dump L1 ofm buffers in addition to others\n"
     "text_dump       : Dump in text format\n"
     "skip_iter       : Skip iterations in batch mode when possible\n"
-    "skip_iter2      : skip_iter using lcp lock.\n"
+    "skip_iter2      : skip_iter using lcp lock.(Telluride only)\n"
     #"dump_temps      : Write intermediate (.lst) files to disk\n"
     "multistamp      : Enable N Stamp/Batch mode\n",
     #"disable_tg      : Disable Step to TG layers\n",
