@@ -112,7 +112,7 @@ class Buffer:
       ping = entry["l1_ping"]
       pong = entry.get("l1_pong", ping)
       self.l1 = L1Buffer(int(ping[0], 16), ping[1] * size_shift, int(pong[0], 16), pong[1] * size_shift)
-    
+
     # Handle both "l2" format and "l2_ping/l2_pong" format
     l2_bufs_list = []
     if "l2_ping" in entry:
@@ -518,11 +518,12 @@ class LayerInfo:
         if layer.pm_work_dir:
           path = os.path.join(args.aie_dir, layer.pm_work_dir)
           if layer.pm_work_dir not in self.x2_work_dirs:
-            self.x2_work_dirs[layer.pm_work_dir] = WorkDir(path, args.peano, self.overlay)
+            self.x2_work_dirs[layer.pm_work_dir] = WorkDir(path, args.peano, self.overlay, self.aie_iface.ARCH_NAME)
           self.layer_workdir_map[layer.layer_order] = self.x2_work_dirs[layer.pm_work_dir]
       self.work_dir = next(iter(self.layer_workdir_map.values()))
     else:
-      self.work_dir = WorkDir(args.aie_dir, args.peano, self.overlay, args.run_flags.dump_temps)
+      self.work_dir = WorkDir(args.aie_dir, args.peano, self.overlay,
+                              self.aie_iface.ARCH_NAME, args.run_flags.dump_temps)
 
     if not args.aie_only:
       # Set PC Value for layers
