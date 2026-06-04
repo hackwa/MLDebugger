@@ -165,11 +165,8 @@ class BatchRunner:
 
   def schedule_layer_start(self, next_layer):
     """
-    Schedule and apply breakpoints to reach the first iteration of a new layer
-    across all stamps.
-
-    After breakpoints are hit, verifies PC values and invokes start-breakpoint
-    processing or error handling.
+    Try to reach first iteration of next_layer.
+    This is where all the complexity is.
 
     Args:
       next_layer: Next Layer object to start.
@@ -177,19 +174,16 @@ class BatchRunner:
     overlay = self.design_info.overlay
     stamp_target_layers = {}
     for sid in range(len(self.state.pm_reload)):
-      if overlay.is_leftmost_in_batch(sid):
-        # Leftmost replica of every batch always participates in next_layer.
-        stamp_target_layers[sid] = next_layer
-      else:
-        stamp_target_layers[sid] = self.state.get_next_layer_for_stamp(sid)
+      stamp_target_layers[sid] = self.state.get_next_layer_for_stamp(sid)
 
+    # ECC interferes with debugger
     for utl in self.aie_utls:
       utl.disable_ecc_event()
 
     bes_to_poll = []
     bes_to_run = []
     active_stamps_all_batches = []
-    # Per-batch leftmost stamps (sid 0 within each batch) always have their
+    # Per-batch leftmost stamps (sid 0) always have their
     # breakpoint scheduled on next_layer. The remaining stamps may early-arm
     # a breakpoint for a *future* layer they actually participate in.
     #
@@ -229,7 +223,7 @@ class BatchRunner:
         bes_to_poll.append(self.impls[sid])
         active_stamps_all_batches.append((sid, pml, stamp))
 
-    # Run stamps at exact same time
+    # It is important to continue all stamps at almost same time
     for be in bes_to_run:
       be.continue_aie()
 
@@ -237,9 +231,7 @@ class BatchRunner:
     if self.args.backend != "test":
       wait_until(lambda: all(be.poll_core_status() for be in bes_to_poll))
 
-    # Now check that breakpoints were hit at the right PC for each stamp
-    # that actually targets next_layer. When combo events are used the PC
-    # may have moved by a few cycles past the start_pc.
+    # Check if we are at start of layer
     for sid, pml, stamp in active_stamps_all_batches:
       pcs = self.impls[sid].read_core_pc(True)
       utl = self.aie_utls[sid]
@@ -253,7 +245,7 @@ class BatchRunner:
       if pml:
         self.impls[sid].enable_pc_halt()
         self.state.pm_reload[sid] = False
-      # Breakpoint has now been observed for this stamp;
+      # Clear state
       self.state.break_on_stamp_scheduled[sid] = False
 
     # Save for run_layer to consume.
@@ -418,7 +410,7 @@ class BatchRunner:
     if not cur_it:
       cur_it = 1
 
-    # active_stamps_all_batches is determined by schedule_layer_start
+    # Determined by schedule_layer_start
     stamps = self.state.active_stamps_all_batches
 
     with ThreadPoolExecutor(max_workers=len(stamps)) as executor:
