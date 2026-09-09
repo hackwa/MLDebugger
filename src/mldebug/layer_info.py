@@ -207,15 +207,18 @@ class Stamp:
 
   Attributes:
       name (str): Kernel name.
-      start_pc (int): Start program counter.
+      start_pc (int): PC the debugger breaks on to enter the layer.
       end_pc (int): End program counter.
       elf_name (str): Associated ELF object.
+      kernel_pc (int): Entry PC of the kernel itself, kept for call trees and
+          reports now that start_pc points into kernelWrapper.
   """
 
   name: str
   start_pc: int = 0
   end_pc: int = 0
   elf_name: str = ""
+  kernel_pc: int = 0
 
 
 @dataclass
@@ -1025,16 +1028,16 @@ class LayerInfo:
     # Resolve PCs once per stamp
     for sid in range(self.overlay.get_stamps_per_batch()):
       for layer in self.layers:
-        flist = list(self.layer_workdir_map[layer.layer_order].stamps[sid].aie_functions.values())[
-          0
-        ]
-        self.layer_workdir_map[layer.layer_order].stamps[sid].pm_reload_en = True
+        wd_stamp = self.layer_workdir_map[layer.layer_order].stamps[sid]
+        elf_name, flist = list(wd_stamp.aie_functions.items())[0]
+        wd_stamp.pm_reload_en = True
         for f in flist:
           if _strip_template(layer.stamps[sid].name.lower()) == _strip_template(f.name.lower()):
             stamp = layer.stamps[sid]
             LOGGER.verbose_print("Layer found:", layer.layer_order, stamp.name, f.start_pc)
             stamp.elf_name = layer.pm_work_dir
-            stamp.start_pc = f.start_pc
+            stamp.kernel_pc = f.start_pc
+            stamp.start_pc = wd_stamp.ifm_acquire_pc.get(elf_name) or f.start_pc
             if f.name.lower() not in skip_end_pc_kernels:
               stamp.end_pc = f.final_lock_release_pc
 
@@ -1074,6 +1077,9 @@ class LayerInfo:
         elf_name.split("reloadable")[-1]: {_strip_template(f.name.lower()): f for f in flist}
         for elf_name, flist in aiec_info.aie_functions.items()
       }
+      acq_by_elf = {
+        elf_name.split("reloadable")[-1]: pc for elf_name, pc in aiec_info.ifm_acquire_pc.items()
+      }
       for layer in self.layers:
         if sid >= len(layer.stamps):
           continue
@@ -1108,7 +1114,8 @@ class LayerInfo:
         LOGGER.verbose_print("Layer found:", layer.layer_order, stamp.name)
         if not layer.lcp.is_tg:
           stamp.elf_name = elf_id
-        stamp.start_pc = f.start_pc
+        stamp.kernel_pc = f.start_pc
+        stamp.start_pc = acq_by_elf.get(elf_id) or f.start_pc
         if f.name.lower() not in skip_end_pc_kernels:
           stamp.end_pc = f.final_lock_release_pc
 

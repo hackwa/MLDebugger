@@ -94,6 +94,9 @@ class StampInfo:
   globals: list = field(default_factory=list)
   # Lock acquire instruction PC after layer execution (used for skip_iter).
   post_layer_lock_acq_pc: int = 0
+  # elf_name -> PC of kernelWrapper's first IFM lock acquire. Every layer in an
+  # ELF breaks here, so the core stops before it can stall on the input lock.
+  ifm_acquire_pc: dict = field(default_factory=dict)
   # list[(elf_name, lst_text)] captured during LLVM parsing.
   lst_map: list = field(default_factory=list)
 
@@ -631,6 +634,16 @@ class WorkDir:
           in_func.end_pc = self._get_pc(line, llvm=True)
           flist.append(in_func)
           in_func = None
+      # kernelWrapper acquires its sync input(s) then its output, all
+      # predicated. The first acq.cond is the IFM acquire; breaking there stops
+      # the core before it can consume -- or block on -- the input handshake.
+      elif (
+        in_func
+        and in_func.name.lower().startswith("kernelwrapper")
+        and self._is_llvm_insn_line(line)
+        and re.search(r"\bacq\.cond\b", line)
+      ):
+        self.stamps[stampid].ifm_acquire_pc.setdefault(elf_name, self._get_pc(line, llvm=True))
       # lock rel
       elif self._is_llvm_insn_line(line) and re.search(r"\brel\b", line) and "rel." not in line:
         # Account for text outside function
@@ -676,7 +689,9 @@ class WorkDir:
     Call tree of one layer stamp's kernel, or None when its ELF cannot supply one.
     """
     elf = self._find_elf(sid, stamp.elf_name)
-    if not elf or not stamp.start_pc:
+    # Root the tree at the kernel, not at the kernelWrapper PC start_pc holds.
+    kernel_pc = stamp.kernel_pc or stamp.start_pc
+    if not elf or not kernel_pc:
       return None
     flist = self.stamps[sid].aie_functions[elf]
     location = f"stamp {sid} (elf {elf})"
@@ -685,11 +700,11 @@ class WorkDir:
       lst = dict(self.stamps[sid].lst_map).get(elf)
       if not lst:
         return None
-      return build_kernel_info_from_lst(lst, stamp.start_pc, flist, location)
+      return build_kernel_info_from_lst(lst, kernel_pc, flist, location)
     map_path = Path(self.aie_dir) / "aie" / elf / "Release" / f"{elf}.map"
     if not map_path.is_file():
       return None
-    return build_kernel_info(map_path, stamp.start_pc, flist, demangle, location)
+    return build_kernel_info(map_path, kernel_pc, flist, demangle, location)
 
   def get_kernel_info(self, layer_stamps):
     """
