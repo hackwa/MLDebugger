@@ -398,12 +398,25 @@ class BatchRunner:
       self.state.error = not utl.skip_iterations(target_itr - cur_it, sid)
     elif self.args.run_flags.skip_iter2:
       is_last_layer = self.state.get_next_layer_for_stamp(sid, idx=1) is None
-      self.state.error = not utl.skip_iterations_to_lock_acq(
-        self.design_info.work_dir.stamp(sid).post_layer_lock_acq_pc,
-        target_itr - cur_it,
-        sid,
-        is_last_layer,
-      )
+      lock_acq_pc = self.design_info.work_dir.stamp(sid).post_layer_lock_acq_pc
+      ofm_release_pc = self.design_info.work_dir.get_ofm_release_pc(sid, stamp.elf_name)
+      if ofm_release_pc:
+        # Park holding the OFM lock instead of past the LCP release, so the
+        # controller cannot set up the next layer while this core is halted.
+        self.state.error = not utl.park_at_ofm_release(
+          ofm_release_pc,
+          lock_acq_pc,
+          target_itr - cur_it + 1,
+          sid,
+          is_last_layer,
+        )
+      else:
+        self.state.error = not utl.skip_iterations_to_lock_acq(
+          lock_acq_pc,
+          target_itr - cur_it,
+          sid,
+          is_last_layer,
+        )
     else:
       while cur_it < target_itr:
         self.hit_next_breakpoint(sid)

@@ -94,6 +94,8 @@ class StampInfo:
   globals: list = field(default_factory=list)
   # Lock acquire instruction PC after layer execution (used for skip_iter).
   post_layer_lock_acq_pc: int = 0
+  # elf_name -> PC of kernelWrapper's output-buffer release (used by skip_iter2).
+  ofm_release_pc: dict = field(default_factory=dict)
   # list[(elf_name, lst_text)] captured during LLVM parsing.
   lst_map: list = field(default_factory=list)
 
@@ -631,6 +633,16 @@ class WorkDir:
           in_func.end_pc = self._get_pc(line, llvm=True)
           flist.append(in_func)
           in_func = None
+      # kernelWrapper releases its input(s) then its output, all predicated, so
+      # the last rel.cond is the OFM release. Keep it separate from
+      # final_lock_release_pc, which tracks the in-kernel release of async buffers.
+      elif (
+        self._is_llvm_insn_line(line)
+        and in_func
+        and in_func.name.lower().startswith("kernelwrapper")
+        and re.search(r"\brel\.cond\b", line)
+      ):
+        self.stamps[stampid].ofm_release_pc[elf_name] = self._get_pc(line, llvm=True)
       # lock rel
       elif self._is_llvm_insn_line(line) and re.search(r"\brel\b", line) and "rel." not in line:
         # Account for text outside function
@@ -670,6 +682,15 @@ class WorkDir:
       (e for e in self.stamps[sid].aie_functions if e.split("reloadable")[-1] == str(elf_id)),
       None,
     )
+
+  def get_ofm_release_pc(self, sid, elf_id):
+    """
+    PC of kernelWrapper's OFM release in the ELF this layer stamp runs, or 0
+    when that ELF has no kernelWrapper (e.g. the base ELF).
+    """
+    s = sid % self.stamps_per_batch
+    elf = self._find_elf(s, elf_id)
+    return self.stamps[s].ofm_release_pc.get(elf, 0) if elf else 0
 
   def _stamp_kernel_info(self, sid, stamp, demangle):
     """
