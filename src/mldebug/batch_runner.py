@@ -405,7 +405,6 @@ class BatchRunner:
         # controller cannot set up the next layer while this core is halted.
         self.state.error = not utl.park_at_ofm_release(
           ofm_release_pc,
-          lock_acq_pc,
           target_itr - cur_it + 1,
           sid,
           is_last_layer,

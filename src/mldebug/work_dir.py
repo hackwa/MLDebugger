@@ -637,9 +637,9 @@ class WorkDir:
       # the last rel.cond is the OFM release. Keep it separate from
       # final_lock_release_pc, which tracks the in-kernel release of async buffers.
       elif (
-        self._is_llvm_insn_line(line)
-        and in_func
+        in_func
         and in_func.name.lower().startswith("kernelwrapper")
+        and self._is_llvm_insn_line(line)
         and re.search(r"\brel\.cond\b", line)
       ):
         self.stamps[stampid].ofm_release_pc[elf_name] = self._get_pc(line, llvm=True)

@@ -211,15 +211,15 @@ class AIEUtil:
     #    )
     return is_valid
 
-  def park_at_ofm_release(self, ofm_release_pc, backstop_pc, count, sid, is_last_layer=False):
+  def park_at_ofm_release(self, ofm_release_pc, count, sid, is_last_layer=False):
     """
     Run out a layer and stop on its last OFM release, so the core is still
     holding its output lock when the debugger moves to the next layer. That
     lock backpressures the L1->L2->L3 chain and, through it, the controller.
 
-    backstop_pc (the post-layer LCP acquire) is armed in slot 1 so we stop even
-    if the layer produces fewer releases than iterations -- kernelWrapper's
-    release is predicated, so layers with depth_iter > 1 release less often.
+    count is the expected number of releases. kernelWrapper's release is
+    predicated, so a layer that releases less often than once per iteration
+    will overshoot into the next layer; the final PC check reports that.
     """
     if self._is_test_mode():
       return True
@@ -234,7 +234,7 @@ class AIEUtil:
       return True
 
     self.impl.set_pc_breakpoint(ofm_release_pc, 0)
-    self.impl.set_pc_breakpoint(backstop_pc, 1)
+    self.impl.clear_pc_breakpoint(1)
 
     pcs = []
     for _ in range(max(count, 1)):
@@ -243,12 +243,6 @@ class AIEUtil:
         LOGGER.log(f"{sid}: Timeout parking at OFM release pc={ofm_release_pc}. pcs={pcs}")
         return False
       pcs = self.impl.read_core_pc(True)
-      if self.pcs_match_target(pcs, backstop_pc):
-        LOGGER.log(
-          f"{sid}: Layer ended before the expected OFM release count; parked at "
-          f"{backstop_pc} instead of {ofm_release_pc}."
-        )
-        return True
 
     is_valid = self.pcs_match_target(pcs, ofm_release_pc)
     if not is_valid:
