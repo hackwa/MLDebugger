@@ -331,6 +331,12 @@ def app():
     metavar="<path>",
   )
   p.add_argument(
+    "--phase",
+    help=_dev_cli_help("LLM designs only: stage to debug. Default: prefill\n"),
+    choices=["prefill", "decode"],
+    default="prefill",
+  )
+  p.add_argument(
     "-x2",
     "--x2_folder_path",
     help=_dev_cli_help(

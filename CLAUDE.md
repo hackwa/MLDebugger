@@ -542,6 +542,15 @@ one subgraph at a time. If the model has more than one subgraph the
 user must name the one to debug in `vitisai_config.json` under
 `passes[].vaiml_config.include_subgraphs`.
 
+**LLM designs** have one model folder per stage:
+`vaiml_folder/<model>/model_<N>/vaiml_par_<M>/`, plus
+`<model>/connectivity_metadata.json`. `get_subgraph` detects that file
+and `get_llm_subgraph` picks the execution group whose
+`selector.phase` matches the hidden `--phase` flag (default `prefill`,
+which always runs first; `decode` is reserved for later). CPU partitions
+(`vaiml_cpu_subgraph_*`) are skipped. The subgraph name becomes
+`model_<N>_vaiml_par_<M>` to match the runtime's buffer naming.
+
 **Failsafe partitions (FSP)** are an older mechanism, deprecated but
 still supported. They split a single subgraph into multiple
 program-memory partitions for very large models. Each FSP has its own

@@ -623,6 +623,54 @@ def get_failsafe_partitions(subgraph_path: str) -> list[str]:
   return result
 
 
+def get_llm_subgraph(args, metadata_file: str) -> tuple[str, Subgraph]:
+  """
+  Picks the NPU subgraph for args.phase from an LLM design's connectivity_metadata.json.
+  Layout: <vaiml>/<model>/connectivity_metadata.json, <vaiml>/<model>/model_<N>/vaiml_par_<M>/
+  """
+  model_dir = os.path.dirname(metadata_file).replace("\\", "/")
+  with open(metadata_file, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+  groups = [g for g in data["execution_groups"] if g["selector"]["phase"] == args.phase]
+  if len(groups) != 1:
+    found = [(g["id"], g["selector"]["phase"]) for g in data["execution_groups"]]
+    raise RuntimeError(
+      f"Error: Expected exactly one '{args.phase}' execution group in {metadata_file}, "
+      f"found: {found}"
+    )
+  group = groups[0]
+
+  # CPU partitions (vaiml_cpu_subgraph_*) are also listed but don't run on the AIE
+  partitions = {k: v for k, v in group["partitions"].items() if k.startswith("vaiml_par_")}
+  if len(partitions) > 1:
+    include = []
+    cfg_file = f"{args.vaiml_folder_path}/vitisai_config.json"
+    if Path(cfg_file).exists():
+      with open(cfg_file, "r", encoding="utf-8") as f:
+        for pas in json.load(f)["passes"]:
+          if "vaiml_config" in pas:
+            include = pas["vaiml_config"].get("include_subgraphs") or []
+            break
+    partitions = {k: v for k, v in partitions.items() if k in include}
+  if len(partitions) != 1:
+    raise RuntimeError(
+      f"Error: Execution group '{group['id']}' needs exactly one AIE subgraph. "
+      "Please specify the partition by using include_subgraphs "
+      "flag in vaiml_config in vitisai_config.json"
+    )
+
+  rel_path = next(iter(partitions.values()))
+  LOGGER.log(
+    f"[INFO] LLM design detected: debugging {args.phase} stage ({group['id']} -> {rel_path})"
+  )
+  return os.path.basename(model_dir), Subgraph(
+    folder_path=f"{model_dir}/{rel_path}",
+    # Matches the runtime's buffer naming, e.g. spillBO_model_2_vaiml_par_0_*
+    name=rel_path.replace("/", "_"),
+  )
+
+
 def get_subgraph(args) -> tuple[str, Subgraph]:
   """
   Determines if the design is a single-subgraph design or finds the subgraph specified in vitisai_config.json.
@@ -637,6 +685,10 @@ def get_subgraph(args) -> tuple[str, Subgraph]:
       RuntimeError: If multiple subgraphs are found and none is specified, or if none are found.
   """
   vaiml_folder_path = args.vaiml_folder_path
+  llm_metadata = glob.glob(f"{vaiml_folder_path}/*/connectivity_metadata.json")
+  if llm_metadata:
+    return get_llm_subgraph(args, llm_metadata[0])
+
   model_folder_name, subgraphs = return_all_subgraphs(vaiml_folder_path)
   cfg_file = f"{vaiml_folder_path}/vitisai_config.json"
 
